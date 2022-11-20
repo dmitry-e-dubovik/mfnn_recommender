@@ -228,13 +228,16 @@ class MFNNRecommender():
         return ui_mtrx
     
 
-    def recommend(self, id, n: int):
+    def recommend(self, id, n: int, mapping: dict = None):
         user_idx = self.user_map[self.user_map['user_id'] == id][['user_idx']].iloc[0, 0]
 
         top_list = self.recommendations[self.recommendations['user_idx'] == user_idx]
         top_list = top_list.merge(self.item_map, how='left', on=['item_idx'])
         top_list = top_list.sort_values(['rating'], ascending=False).head(n)
         top_list = top_list['item_id'].tolist()
+
+        if mapping is not None:
+            top_list = list(map(mapping.get, top_list))
 
         return top_list
     
