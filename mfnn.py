@@ -1,6 +1,9 @@
+import os
+import shutil
+import json
+
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import shutil
 
 import torch
 from torch import nn
@@ -11,25 +14,33 @@ from torch.utils.tensorboard import SummaryWriter
 class MFNNRecommender():
     def __init__(
         self,
-        data: pd.DataFrame,
-        user_field: str,
-        item_field: str,
-        rating_field: str,
+        data: pd.DataFrame = None,
+        user_field: str = None,
+        item_field: str = None,
+        rating_field: str = None,
+        onload: bool = False,
     ) -> None:
 
         self.logdir = 'runs'
         
-        self.user_field = user_field,
-        self.item_field = item_field,
-        self.rating_field = rating_field,
+        self.user_field = user_field
+        self.item_field = item_field
+        self.rating_field = rating_field
 
-        self.data, self.user_map, self.item_map = self.__initial_preprocessing(
-            data=data,
-            user_field=user_field,
-            item_field=item_field,
-            rating_field=rating_field,
-        )
+        if not onload:            
+            self.data, self.user_map, self.item_map = self.__initial_preprocessing(
+                data=data,
+                user_field=user_field,
+                item_field=item_field,
+                rating_field=rating_field,
+            )
+            
+        else:
+            self.data = None
+            self.user_map = None
+            self.item_map = None
 
+        self.dim = None
         self.model = None
         self.optimizer = None
         self.loss = None
@@ -127,6 +138,8 @@ class MFNNRecommender():
         batch_size=64,
     ) -> None:
         
+        self.dim = dim
+
         df_train, df_test = train_test_split(self.data, test_size=test_size, random_state=42)
 
         train_dataset = self.UIDataset(df_train)
@@ -222,3 +235,52 @@ class MFNNRecommender():
         top_list = top_list['item_id'].tolist()
 
         return top_list
+    
+
+    def save(self, model_name: str) -> None:
+        if os.path.exists(f'models/{model_name}'):
+            shutil.rmtree(f'models/{model_name}')
+        
+        os.makedirs(f'models/{model_name}')            
+
+        params = {}
+
+        params['logdir'] = 'runs'
+        
+        params['user_field'] = self.user_field
+        params['item_field'] = self.item_field
+        params['rating_field'] = self.rating_field
+        params['dim'] = self.dim
+
+        with open (f'models/{model_name}/params.json', 'w') as fp:
+            json.dump(params, fp)
+
+        self.data.to_parquet(f'models/{model_name}/data.parquet.gzip')
+        self.user_map.to_parquet(f'models/{model_name}/user_map.parquet.gzip')
+        self.item_map.to_parquet(f'models/{model_name}/item_map.parquet.gzip')
+        self.recommendations.to_parquet(f'models/{model_name}/recommendations.parquet.gzip')
+
+        torch.save(self.model.state_dict(), f'models/{model_name}/model.pth')
+    
+
+    def load(self, model_name: str) -> None:
+        with open (f'models/{model_name}/params.json', 'r') as fp:
+            params = json.load(fp)
+        
+        self.logdir = params['logdir']
+
+        self.user_field = params['user_field']
+        self.item_field = params['item_field']
+        self.rating_field = params['rating_field']
+        self.dim = params['dim']
+
+        self.data = pd.read_parquet(f'models/{model_name}/data.parquet.gzip')
+        self.user_map = pd.read_parquet(f'models/{model_name}/user_map.parquet.gzip')
+        self.item_map = pd.read_parquet(f'models/{model_name}/item_map.parquet.gzip')
+        self.recommendations = pd.read_parquet(f'models/{model_name}/recommendations.parquet.gzip')
+
+        self.model = self.ModelEmbNN(num_user=len(self.user_map), num_item=len(self.item_map), dim=self.dim)
+        self.model.load_state_dict(torch.load(f'models/{model_name}/model.pth'))
+        self.model.eval()
+    
+    
