@@ -172,7 +172,9 @@ class MFNNRecommender():
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.loss = nn.L1Loss()
 
-        shutil.rmtree(self.logdir)
+        if os.path.exists(self.logdir):
+            shutil.rmtree(self.logdir)
+        
         writer = SummaryWriter(self.logdir)
 
         for epoch in range(epochs):
